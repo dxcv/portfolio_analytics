@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np 
 import scipy.optimize as sco
 import time
+import datetime as dt
 
 class Opt_Helpers(object):
     """
@@ -10,12 +11,14 @@ class Opt_Helpers(object):
     """
 
     def __init__(self, df, rf=0, scaling_fact=252):
-        self.df = df
+        self.df = df.sort_index(ascending=True)/df.sort_index(ascending=True).iloc[0]
         self.rf = 0
         self.scaling_fact = 252    
         self.columns = df.columns  
         self.opt_method = None
         self.weights = None  
+        self.risk_contribution = None
+        self.success = None
         self.stats = None
 
     def summary_stats(self, w):
@@ -104,19 +107,66 @@ class Opt_Helpers(object):
             'sharpe_ratio': s['sharpe_ratio'],
             'max_drawdown': s['max_drawdown']
         }
-        
-        results = {
-            'weights': w,
-            'summary_stats': stats,
-            'success': r.success    
-        }
+
+        self.stats = pd.DataFrame([stats], index=['summary_stats']).T
         
         end = time.time()
         print('{} Success=={} after {} iterations.'.format(r.message, r.success, r.nit))
         print('Total time: {} secs'.format(end - start))
 
-        self.weights = pd.DataFrame(w, index=self.columns, columns=['pos_wgt'])
-        self.weights['vol_contrib'] = pd.DataFrame(s['risk_contribution'], index=self.columns)
-        self.stats = pd.DataFrame([stats], index=['summary_stats']).T
+        self.weights = w
+        self.risk_contribution = s['risk_contribution']
+        self.success = r.nit > 1 and r.success
+
+class BT_Helpers(object):
+
+    def __init__(self, df, opt_period = 365, val_period = 90, rf=0, scaling_fact=252):
+        self.df = df
+        self.opt_period = opt_period
+        self.val_period = val_period
+        self.bt_calendar = self.bt_calendar()
+        self.rf = rf
+        self.scaling_fact = 252
         
-        return results
+    def bt_calendar(self):
+        """Takes in a datetime series and returns a backtest calendar."""
+
+        df = self.df.index
+        opt_period = self.opt_period
+        val_period = self.val_period
+        
+        start_dt, end_dt = min(df), max(df) - dt.timedelta(days=val_period + 1)
+        in_sample_dt, val_sample_dt = [], []
+        
+        idx = 0
+        in_e = start_dt
+        
+        while in_e < end_dt:
+            in_s = start_dt + dt.timedelta(days=idx * val_period)
+            in_e = in_s + dt.timedelta(days=opt_period)
+            if in_e > end_dt - dt.timedelta(days=val_period + 1):
+                in_e = end_dt
+
+            in_sample_dt.append([in_s, in_e])
+            val_sample_dt.append([in_e + dt.timedelta(days=1), in_e + dt.timedelta(days=val_period + 1)])
+
+            idx += 1
+
+        result = [in_sample_dt, val_sample_dt]
+            
+        return result
+
+    def bt_optimisation(self, func, bounds=None, constraints=()):
+        """Returns a dictionary of weights."""
+        
+        bt_weights = {}
+        for opt_dt, val_dt in zip(self.bt_calendar[0], self.bt_calendar[1]):
+            opt_s, opt_e = opt_dt
+            val_s, _ = val_dt
+
+            df = self.df[(self.df.index >= opt_s) & (self.df.index <= opt_e)]     
+            opt = Opt_Helpers(df, rf=self.rf, scaling_fact=self.scaling_fact)
+            opt.port_optimisation(opt.max_dr, bounds=bounds, constraints=constraints)
+            bt_weights[val_s] = opt.weights
+
+        return bt_weights
