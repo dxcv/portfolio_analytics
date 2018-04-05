@@ -12,7 +12,7 @@ class Opt_Helpers(object):
 
     def __init__(self, df, rf=0, scaling_fact=252):
         self.df = df.sort_index(ascending=True)/df.sort_index(ascending=True).iloc[0]
-        self.rf = 0
+        self.rf = rf
         self.scaling_fact = 252    
         self.columns = df.columns  
         self.opt_method = None
@@ -168,7 +168,16 @@ class BT_Helpers(object):
 
             df = self.df[(self.df.index >= opt_s) & (self.df.index <= opt_e)]     
             opt = Opt_Helpers(df, rf=self.rf, scaling_fact=self.scaling_fact)
-            opt.port_optimisation(func, bounds=bounds, constraints=constraints, v=v)
+
+            func_dict = {
+                'max_er': opt.max_er,
+                'min_vol': opt.min_vol,
+                'max_sr': opt.max_sr,
+                'risk_parity': opt.risk_parity,
+                'max_dr': opt.max_dr
+                }
+
+            opt.port_optimisation(func_dict[func], bounds=bounds, constraints=constraints, v=v)
             bt_weights.append([[val_s, val_e], opt.weights])
 
         rb_dts = {}
