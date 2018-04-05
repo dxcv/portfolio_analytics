@@ -27,7 +27,7 @@ class Opt_Helpers(object):
         ln_ret = np.log(self.df / self.df.shift(1))
 
         """Expected return target (based on historical mean)."""
-        er = np.dot(w, ln_ret.mean()) * self.scaling_fact
+        er = np.exp(np.dot(w, ln_ret.mean()) * self.scaling_fact) - 1
 
         """Historical max drawdown."""
         ret = ((np.exp(ln_ret) - 1) * w).sum(axis=1).add(1).cumprod()
@@ -81,7 +81,7 @@ class Opt_Helpers(object):
         self.opt_method = 'max_dr'
         return -self.summary_stats(w)['diversification_ratio']
 
-    def port_optimisation(self, func, bounds=None, constraints=()):
+    def port_optimisation(self, func, bounds=None, constraints=(), v=True):
         """
         Create wrapper for scipy optimisation.
         Not really needed, just makes working with scipy a little easier.
@@ -111,8 +111,9 @@ class Opt_Helpers(object):
         self.stats = pd.DataFrame([stats], index=['summary_stats']).T
         
         end = time.time()
-        print('{} Success=={} after {} iterations.'.format(r.message, r.success, r.nit))
-        print('Total time: {} secs'.format(end - start))
+        if v:
+            print('{} Success=={} after {} iterations.'.format(r.message, r.success, r.nit))
+            print('Total time: {} secs'.format(end - start))
 
         self.weights = w
         self.risk_contribution = s['risk_contribution']
@@ -121,7 +122,7 @@ class Opt_Helpers(object):
 class BT_Helpers(object):
 
     def __init__(self, df, opt_period = 365, val_period = 90, rf=0, scaling_fact=252):
-        self.df = df
+        self.df = df.sort_index(ascending=True)/df.sort_index(ascending=True).iloc[0]
         self.opt_period = opt_period
         self.val_period = val_period
         self.bt_calendar = self.bt_calendar()
@@ -148,25 +149,85 @@ class BT_Helpers(object):
                 in_e = end_dt
 
             in_sample_dt.append([in_s, in_e])
-            val_sample_dt.append([in_e + dt.timedelta(days=1), in_e + dt.timedelta(days=val_period + 1)])
+            val_sample_dt.append([in_e + dt.timedelta(days=1), in_e + dt.timedelta(days=val_period)])
 
             idx += 1
 
         result = [in_sample_dt, val_sample_dt]
             
-        return result
+        return result    
 
-    def bt_optimisation(self, func, bounds=None, constraints=()):
-        """Returns a dictionary of weights."""
+    def bt_optimisation(self, func, bounds=None, constraints=(), v=False):
+        """Returns a list dates and weights."""
         
-        bt_weights = {}
+        start = time.time()
+        bt_weights = []
         for opt_dt, val_dt in zip(self.bt_calendar[0], self.bt_calendar[1]):
             opt_s, opt_e = opt_dt
-            val_s, _ = val_dt
+            val_s, val_e = val_dt
 
             df = self.df[(self.df.index >= opt_s) & (self.df.index <= opt_e)]     
             opt = Opt_Helpers(df, rf=self.rf, scaling_fact=self.scaling_fact)
-            opt.port_optimisation(opt.max_dr, bounds=bounds, constraints=constraints)
-            bt_weights[val_s] = opt.weights
+            opt.port_optimisation(func, bounds=bounds, constraints=constraints, v=v)
+            bt_weights.append([[val_s, val_e], opt.weights])
 
-        return bt_weights
+        rb_dts = {}
+        for (s, e), wgt in bt_weights:
+            rb_dts[self.df.loc[s:e].index[0]] = wgt
+
+        self.weights = rb_dts
+        self.init_dt = list(rb_dts.keys())[0]
+
+        end = time.time()
+
+        print('Total time: {} secs'.format(end - start))
+
+        return rb_dts
+
+    def bt_timeseries(self):
+        df = self.df[self.df.index >= self.init_dt].copy()
+        df = df/df.iloc[0]
+
+        for idx, row in enumerate(df.itertuples()):
+            dt = row[0]
+            if dt in self.weights.keys():
+                w = self.weights[dt]
+                df.iloc[idx] = np.multiply(np.dot(row[1:], w), w)
+            else:
+                df.iloc[idx] = np.multiply(row[1:], w)
+                
+        df['NAV'] = df.sum(axis=1)
+
+        return df
+
+class Stats_Helpers(object):
+
+    def __init__(self):
+        return None
+
+    def stats_summary(self, df, rf=0, scaling_fact=252):
+        ln_rets = np.log(df / df.shift(1))
+
+        res = []
+        for col in ln_rets.columns:
+            ln_ret = ln_rets[col]
+
+            """Expected return target (based on historical mean)."""
+            er = np.exp(ln_ret.mean() * scaling_fact) - 1
+
+            """Historical max drawdown."""
+            ret = (np.exp(ln_ret) - 1).add(1).cumprod()
+            dd = ret.div(ret.cummax()).sub(1)
+            mdd = dd.min()
+
+            """Portfolio volatility."""
+            pvol = ln_ret.std() * (scaling_fact ** 0.5)
+
+            """Sharpe ratio target."""
+            sr = (er - rf) / pvol
+
+            res.append([er, pvol, sr, mdd])
+        
+        results = pd.DataFrame(res, columns=['exp_return', 'volatility', 'sharpe_ratio', 'max_drawdown'], index=ln_rets.columns).T
+
+        return results
