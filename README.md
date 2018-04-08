@@ -1,2 +1,2 @@
-# Portfolio_Tools
-Basic portfolio risk and analysis
+# Portfolio Analytics
+Basic portfolio optimisation functions
