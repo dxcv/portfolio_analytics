@@ -5,7 +5,15 @@ import time
 import datetime as dt
 
 def summary_stats(w, df, rf=0, scaling_fact=252):
-    """Calculates summary statistics needed for optimisation target."""
+    """
+    Calculates summary statistics needed for optimisation target,
+    Returns a dictionary.
+
+    w: List of weights
+    df: DataFrame of prices
+    rf: risk free rate used within calculations, scalar
+    scaling_fact: annualisation factor used within calculations, scalar
+    """
     df = df.sort_index(ascending=True)/df.sort_index(ascending=True).iloc[0]
 
     ln_ret = np.log(df / df.shift(1))
@@ -62,11 +70,18 @@ def max_dr(w, df, rf=0, scaling_fact=252):
 
 def port_optimisation(func, df, rf=0, scaling_fact=252, bounds=None, constraints=(), v=True):
     """
-    Create wrapper for scipy optimisation.
-    Not really needed, just makes working with scipy a little easier.
-    SLSQP selected as method as we will be working with equality constraints.
-    
+    Generates optimised weights based on the func entered.
+    Returns a dictionary.
+
+    func: objective function for optimisation. max_er, min_vol, max_sr, risk_parity, max_dr from pyportopt module
+    df: DataFrame of prices
+    rf: risk free rate used within calculations, scalar
+    scaling_fact: annualisation factor used within calculations, scalar
+    bounds: list of tuples for weight boundaries
+    constraints: list of dictionary of constraints for scipy.optimize.minimize()
+    v: Boolean to print out status of optimisation.
     """
+
     start = time.time()
     w = [1/len(df.columns) for x in df.columns]
     
@@ -86,3 +101,64 @@ def port_optimisation(func, df, rf=0, scaling_fact=252, bounds=None, constraints
         print('Total time: {} secs'.format(end - start))
 
     return {'weights': w, 'success': s}
+
+def dual_target_optimisation(prim_func, init_func, df, relax_tol=0.1, steps=10, rf=0, scaling_fact=252, bounds=None, constraints=[]):
+    """
+    Dual optimisation function. Initially optimises on init_func then re-optimises on prim_func until relaxation tolerence is breached.
+    Returns a DataFrame.
+
+    prim_func: objective function for optimisation. max_er, min_vol, max_sr, risk_parity, max_dr from pyportopt module
+    init_func: objective function for optimisation. max_er, min_vol, max_sr, risk_parity, max_dr from pyportopt module
+    df: DataFrame of prices
+    rf: risk free rate used within calculations, scalar
+    relax_tol: relaxation tolerance as a difference from optimal, e.g. 0.1 represents 10% from init_func optimal
+    steps: number of steps until relax_tol is hit
+    scaling_fact: annualisation factor used within calculations, scalar
+    bounds: list of tuples for weight boundaries
+    constraints: list of dictionary of constraints for scipy.optimize.minimize()
+    v: Boolean to print out status of optimisation.
+    """
+
+    start = time.time()
+    w = [1/len(df.columns) for x in df.columns]
+    res, res_w = [], []
+    
+    init_r = sco.minimize(
+        init_func, w, 
+        (df, rf, scaling_fact),
+        method='SLSQP', 
+        bounds=bounds, constraints=constraints
+    ) 
+
+    opt_trgt = init_r.fun
+    r_tol = abs(opt_trgt * relax_tol)
+
+    for idx, rt in enumerate(np.linspace(0, r_tol, steps)):
+        trgt_cons = opt_trgt + rt
+        adj_cons = [*constraints, {'type': 'eq', 'fun': lambda w: init_func(w, df, rf, scaling_fact) - trgt_cons}]
+
+        r = sco.minimize(
+            prim_func, w, 
+            (df, rf, scaling_fact),
+            method='SLSQP', 
+            bounds=bounds, constraints=adj_cons
+        ) 
+
+        opt_w = r.x
+        prim_trgt = abs(prim_func(opt_w, df, rf, scaling_fact))
+        init_trgt = abs(init_func(opt_w, df, rf, scaling_fact))
+
+        res.append([prim_trgt, init_trgt])
+        res_w.append(opt_w)
+
+    res = pd.DataFrame(res, columns=[prim_func.__name__, init_func.__name__])
+    res_w = pd.DataFrame(res_w, columns=df.columns).round(4)
+    final_res = pd.concat([res, res_w], axis=1)
+    final_res.index.name = 'step'
+
+    end = time.time()
+
+
+    print('Total time: {} secs'.format(end - start))
+
+    return final_res

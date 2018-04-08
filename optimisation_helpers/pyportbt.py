@@ -74,6 +74,7 @@ class PyBacktest(object):
 
     def bt_timeseries(self, invested=1):
         """
+        Walkforward optimisation based on bt_optimisation results,
         Returns timeseries using the backtested weights, 
         Assumes rebalancing is done at the end of the rebalance date.
         """
