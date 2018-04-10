@@ -1,13 +1,25 @@
 import pandas as pd 
 import numpy as np 
 import scipy.optimize as sco
-import pyportopt as opt
+from pyport.portopt import opt
 import time
 import datetime as dt
+
+__all__ = ['PyBacktest']
 
 class PyBacktest(object):
 
     def __init__(self, df, opt_period = 365, val_period = 90, rf=0, scaling_fact=252):
+        """
+        Parameters
+        ----------  
+        df: DataFrame of prices
+        opt_period: number of periods used for covar matrix and return expectations
+        val_period: number of periods used for out of sample results
+        rf: risk free rate, scalar
+        """
+        
+
         self.df = df.sort_index(ascending=True)/df.sort_index(ascending=True).iloc[0]
         self.opt_period = opt_period
         self.val_period = val_period
@@ -44,7 +56,16 @@ class PyBacktest(object):
         return result    
 
     def bt_optimisation(self, func, bounds=None, constraints=(), v=False):
-        """Returns a list dates and weights."""
+        """
+        Returns a list dates and weights.
+
+        Parameters
+        ----------        
+        func: objective function from pyportopt package
+        bounds: list of tuples defining boundaries within optimisation
+        constraints: list of dictionaries defining constraints
+        v: boolean for printing
+        """
         
         start = time.time()
         bt_weights = []
@@ -77,6 +98,10 @@ class PyBacktest(object):
         Walkforward optimisation based on bt_optimisation results,
         Returns timeseries using the backtested weights, 
         Assumes rebalancing is done at the end of the rebalance date.
+
+        Parameters
+        ----------
+        invested: monetary value of initial investment, scalar
         """
 
         df = self.df[self.df.index >= self.init_dt].copy()
