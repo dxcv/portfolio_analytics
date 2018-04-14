@@ -1,7 +1,7 @@
 import pandas as pd 
 import numpy as np 
 import scipy.optimize as sco
-from pyport.portopt import opt
+from pyport.portopt import opt, objfunc
 import time
 import datetime as dt
 
@@ -66,6 +66,8 @@ class PyBacktest(object):
         constraints: list of dictionaries defining constraints
         v: boolean for printing
         """
+
+        non_opt_func = ['equal_weights', 'inv_volatility', 'inv_variance']
         
         start = time.time()
         bt_weights = []
@@ -75,9 +77,17 @@ class PyBacktest(object):
 
             df = self.df[(self.df.index >= opt_s) & (self.df.index <= opt_e)]     
 
-            res = opt.port_optimisation(func, df=df, rf=self.rf, scaling_fact=self.scaling_fact, bounds=bounds, constraints=constraints, v=v)
-            if not res['success']:
-                return print('Optimisation Failed')
+            if func.__name__ in non_opt_func:
+                if func.__name__ == 'equal_weights':
+                    res = {'weights': objfunc.equal_weights(df)}
+                if func.__name__ == 'inv_volatility':
+                    res = {'weights': objfunc.inv_volatility(df)}
+                if func.__name__ == 'inv_variance':
+                    res = {'weights': objfunc.inv_variance(df)}
+            else:
+                res = opt.port_optimisation(func, df=df, rf=self.rf, scaling_fact=self.scaling_fact, bounds=bounds, constraints=constraints, v=v)
+                if not res['success']:
+                    return print('Optimisation Failed')
             bt_weights.append([[val_s, val_e], res['weights']])
 
         rb_dts = {}
@@ -89,7 +99,7 @@ class PyBacktest(object):
 
         end = time.time()
 
-        print('Total time: {} secs'.format(end - start))
+        print('Algorithm: {}\nTotal time: {} secs\n'.format(func.__name__, round(end - start, 4)))
 
         return rb_dts
 

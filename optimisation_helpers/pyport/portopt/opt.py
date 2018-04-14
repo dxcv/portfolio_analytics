@@ -6,7 +6,7 @@ import datetime as dt
 
 __all__ = ['port_optimisation', 'dual_target_optimisation']
 
-def port_optimisation(func, df, rf=0, scaling_fact=252, bounds=None, constraints=(), v=True):
+def port_optimisation(func, df, rf=0, scaling_fact=252, conf_lvl=0.95, bounds=None, constraints=(), v=True):
     """
     Generates optimised weights based on the func entered.
     Returns a dictionary.
@@ -22,12 +22,18 @@ def port_optimisation(func, df, rf=0, scaling_fact=252, bounds=None, constraints
     v: Boolean to print out status of optimisation.
     """
 
+    non_opt_func = ['equal_weights', 'inv_volatility', 'inv_variance']
+
+    if func.__name__ in non_opt_func:
+        print("{} not supported".format(func.__name__))
+        return None
+
     start = time.time()
     w = [1/len(df.columns) for x in df.columns]
     
     r = sco.minimize(
         func, w, 
-        (df, rf, scaling_fact),
+        (df, rf, scaling_fact, conf_lvl, True),
         method='SLSQP', 
         bounds=bounds, constraints=constraints
     ) 
@@ -42,7 +48,7 @@ def port_optimisation(func, df, rf=0, scaling_fact=252, bounds=None, constraints
 
     return {'weights': w, 'success': s}
 
-def dual_target_optimisation(prim_func, init_func, df, relax_tol=0.1, steps=10, rf=0, scaling_fact=252, bounds=None, constraints=[]):
+def dual_target_optimisation(prim_func, init_func, df, relax_tol=0.1, steps=10, rf=0, scaling_fact=252, conf_lvl=0.95, bounds=None, constraints=[]):
     """
     Dual optimisation function. Initially optimises on init_func then re-optimises on prim_func until relaxation tolerence is breached.
     Returns a DataFrame.
@@ -61,13 +67,19 @@ def dual_target_optimisation(prim_func, init_func, df, relax_tol=0.1, steps=10, 
     v: Boolean to print out status of optimisation.
     """
 
+    non_opt_func = ['equal_weights', 'inv_volatility', 'inv_variance']
+
+    if [prim_func.__name__, init_func.__name__] in non_opt_func:
+        print("{} or {} not supported".format(prim_func.__name__, init_func.__name__))
+        return None
+
     start = time.time()
     w = [1/len(df.columns) for x in df.columns]
     res, res_w = [], []
     
     init_r = sco.minimize(
         init_func, w, 
-        (df, rf, scaling_fact),
+        (df, rf, scaling_fact, conf_lvl, True),
         method='SLSQP', 
         bounds=bounds, constraints=constraints
     ) 
@@ -81,7 +93,7 @@ def dual_target_optimisation(prim_func, init_func, df, relax_tol=0.1, steps=10, 
 
         r = sco.minimize(
             prim_func, w, 
-            (df, rf, scaling_fact),
+            (df, rf, scaling_fact, conf_lvl, True),
             method='SLSQP', 
             bounds=bounds, constraints=adj_cons
         ) 
