@@ -5,7 +5,7 @@ import scipy.optimize as sco
 def hedged_er(er, vol, hedge_cost, hedge_strategy='put', leg1_strike=None, leg2_strike=None, years=1, paths=10000):
     """
     Simulates asset returns based on a geometric brownian motion (Black-Scholes-Merton setup)
-    Returns a distribution of returns, pandas Series.
+    Returns a distribution of unhedged and hedged returns, dictionary of pandas Series.
 
     Parameters
     ----------        
@@ -20,13 +20,13 @@ def hedged_er(er, vol, hedge_cost, hedge_strategy='put', leg1_strike=None, leg2_
     """
 
     S0 = 100
-    ST = S0 * np.exp((er - 0.5 * vol ** 2) * T + vol * T ** 0.5 * np.random.standard_normal((iters))
+    ST = S0 * np.exp((er - 0.5 * vol ** 2) * years + vol * years ** 0.5 * np.random.standard_normal((paths)))
     R_gbm = pd.Series(np.sort(ST / S0 - 1))
 
     if hedge_strategy == 'put':
         hedged_R_gbm = R_gbm.apply(lambda x: x - hedge_cost + max(leg1_strike - x, 0))
     elif hedge_strategy == 'put_spread':
-        hedged_R_gbm = R_gbm.apply(lambda x: x - hedge_cost + max(min(leg1_strike - x, leg2_strike - leg1_strike), 0)
+        hedged_R_gbm = R_gbm.apply(lambda x: x - hedge_cost + max(min(leg1_strike - x, leg2_strike - leg1_strike), 0))
     elif hedge_strategy == 'risk_reversal':
         print('TODO')
         return None
@@ -34,4 +34,4 @@ def hedged_er(er, vol, hedge_cost, hedge_strategy='put', leg1_strike=None, leg2_
         print('{} not supported. Please select {}, {}, or {}'.format(hedge_stategy, 'put', 'put_spread', 'risk_reversal'))
 
 
-    return None
+    return {'unhedged': R_gbm, 'hedged': hedged_R_gbm}
