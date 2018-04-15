@@ -112,6 +112,6 @@ def dual_target_optimisation(prim_func, init_func, df, relax_tol=0.1, steps=10, 
 
     end = time.time()
 
-    print('Total time: {} secs'.format(end - start))
+    print('Primary Target: {}\nRelax on: {}\nTotal time: {} secs'.format(prim_func.__name__, init_func.__name__, round(end - start, 4)))
 
     return final_res
