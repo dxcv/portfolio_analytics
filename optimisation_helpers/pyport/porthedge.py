@@ -26,7 +26,7 @@ def hedged_er(er, vol, hedge_cost, hedge_strategy='put', leg1_strike=None, leg2_
     if hedge_strategy == 'put':
         hedged_R_gbm = R_gbm.apply(lambda x: x - hedge_cost + max(leg1_strike - x, 0))
     elif hedge_strategy == 'put_spread':
-        hedged_R_gbm = R_gbm.apply(lambda x: x - hedge_cost + max(min(leg1_strike - x, leg2_strike - leg1_strike), 0))
+        hedged_R_gbm = R_gbm.apply(lambda x: x - hedge_cost + max(min(leg1_strike - x, leg1_strike - leg2_strike), 0))
     elif hedge_strategy == 'risk_reversal':
         print('TODO')
         return None
